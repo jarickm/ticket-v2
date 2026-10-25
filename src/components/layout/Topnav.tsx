@@ -33,6 +33,7 @@ export const Topnav: React.FC<TopnavProps> = ({ onToggleSidebar }) => {
   } = useApp();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const supabaseCreds = typeof window !== 'undefined' ? localStorage.getItem('cci_supabase_url') : null;
 
   // View Title Mapping
   const viewTitles: Record<string, string> = {
@@ -103,11 +104,15 @@ export const Topnav: React.FC<TopnavProps> = ({ onToggleSidebar }) => {
         {/* Supabase Indicator */}
         <button
           onClick={() => setCurrentView('settings')}
-          className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-bold border border-slate-200 dark:border-slate-700"
+          className={`hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+            supabaseCreds
+              ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+              : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+          }`}
           title="Supabase Database Settings"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
-          <span>Supabase Live</span>
+          <span className={`w-2 h-2 rounded-full ${supabaseCreds ? 'bg-emerald-500 shadow-[0_0_6px_#10b981] animate-pulse' : 'bg-slate-400'}`} />
+          <span>{supabaseCreds ? 'Supabase: Active' : 'Supabase: Connect'}</span>
         </button>
 
         {/* Export CSV (From original app /export_report) */}

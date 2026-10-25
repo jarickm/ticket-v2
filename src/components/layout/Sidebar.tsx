@@ -22,7 +22,9 @@ import {
   Archive,
   Fingerprint,
   PackageCheck,
-  ChevronDown
+  ChevronDown,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,7 +39,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     setCurrentView,
     canAccess,
     switchUserRole,
-    setIsSubmitTicketModalOpen
+    setIsSubmitTicketModalOpen,
+    darkMode,
+    toggleDarkMode
   } = useApp();
 
   const handleNav = (view: AppView) => {
@@ -353,6 +357,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Theme Toggle Footer */}
+          <div className="pt-3 mt-auto border-t border-slate-100 dark:border-slate-700/60">
+            <button
+              onClick={toggleDarkMode}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 transition-colors text-xs font-bold cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-500" />}
+                <span>{darkMode ? 'Light Theme' : 'Dark Theme'}</span>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-extrabold">
+                {darkMode ? 'ON' : 'OFF'}
+              </span>
+            </button>
           </div>
         </div>
       </aside>

@@ -1,5 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
-
 export interface TicketDiagnosisResult {
   suggestedPriority: 'Low' | 'Medium' | 'High' | 'Urgent';
   suggestedCategory: 'Incident' | 'Request' | 'Inquiry' | 'Change' | 'Problem';
@@ -8,90 +6,36 @@ export interface TicketDiagnosisResult {
   suggestedReply: string;
 }
 
-// Lazy safe instance of GoogleGenAI
-let aiInstance: GoogleGenAI | null = null;
-let aiInitializationAttempted = false;
-
-function getAIClient(): GoogleGenAI | null {
-  if (aiInstance) return aiInstance;
-  if (aiInitializationAttempted) return null;
-
-  aiInitializationAttempted = true;
-  try {
-    const env = (typeof import.meta !== 'undefined' ? (import.meta as any).env : {}) || {};
-    const apiKey =
-      env.VITE_GEMINI_API_KEY ||
-      (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : '') ||
-      '';
-
-    if (apiKey) {
-      aiInstance = new GoogleGenAI({ apiKey });
-    } else {
-      // Try empty constructor if allowed by environment proxy
-      try {
-        aiInstance = new GoogleGenAI({});
-      } catch {
-        aiInstance = null;
-      }
-    }
-  } catch (err) {
-    console.warn('Gemini client lazy initialization note:', err);
-    aiInstance = null;
-  }
-
-  return aiInstance;
-}
-
 /**
- * Automatically analyzes ticket description and recommends priority, classification, and troubleshooting steps.
+ * Automatically analyzes ticket description and recommends priority, classification, and troubleshooting steps
+ * via full-stack server-side Gemini API.
  */
 export async function analyzeAndDiagnoseTicket(
   subject: string,
   description: string
 ): Promise<TicketDiagnosisResult> {
-  const client = getAIClient();
+  try {
+    const res = await fetch('/api/gemini/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject, description })
+    });
 
-  if (client) {
-    try {
-      const prompt = `You are the Lead IT Systems Architect and Automated Triage Agent for Coolaire Consolidated Inc. (CCI).
-Analyze this IT HelpDesk ticket:
-Subject: "${subject}"
-Description: "${description}"
-
-Respond strictly with a JSON object in this exact schema:
-{
-  "suggestedPriority": "Low" | "Medium" | "High" | "Urgent",
-  "suggestedCategory": "Incident" | "Request" | "Inquiry" | "Change" | "Problem",
-  "rootCauseAnalysis": "1-2 concise sentences analyzing the likely root cause",
-  "recommendedSteps": ["Step 1", "Step 2", "Step 3"],
-  "suggestedReply": "A courteous initial response to the employee acknowledging the ticket and providing immediate workarounds."
-}`;
-
-      const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json'
-        }
-      });
-
-      const text = response.text;
-      if (text) {
-        const parsed = JSON.parse(text);
-        return {
-          suggestedPriority: parsed.suggestedPriority || 'Medium',
-          suggestedCategory: parsed.suggestedCategory || 'Incident',
-          rootCauseAnalysis: parsed.rootCauseAnalysis || 'Technical investigation required.',
-          recommendedSteps: parsed.recommendedSteps || ['Check physical connections', 'Restart client service'],
-          suggestedReply: parsed.suggestedReply || 'Your ticket has been queued with Coolaire IT Support.'
-        };
-      }
-    } catch (err) {
-      console.warn('Gemini AI diagnosis error, using local fallback:', err);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        suggestedPriority: data.suggestedPriority || 'Medium',
+        suggestedCategory: data.suggestedCategory || 'Incident',
+        rootCauseAnalysis: data.rootCauseAnalysis || 'Technical investigation required.',
+        recommendedSteps: data.recommendedSteps || ['Check physical connection', 'Restart service'],
+        suggestedReply: data.suggestedReply || 'Your ticket has been queued with Coolaire IT Support.'
+      };
     }
+  } catch (err) {
+    console.warn('Network call to /api/gemini/diagnose failed, using client fallback:', err);
   }
 
-  // Fallback heuristic if offline or API key missing
+  // Fallback heuristic if server is unavailable
   const lower = (subject + ' ' + description).toLowerCase();
   const isUrgent =
     lower.includes('down') ||
@@ -108,11 +52,12 @@ Respond strictly with a JSON object in this exact schema:
 
   return {
     suggestedPriority: isUrgent ? 'Urgent' : isHigh ? 'High' : 'Medium',
-    suggestedCategory: lower.includes('request') || lower.includes('need') || lower.includes('access')
-      ? 'Request'
-      : lower.includes('inquiry') || lower.includes('question')
-      ? 'Inquiry'
-      : 'Incident',
+    suggestedCategory:
+      lower.includes('request') || lower.includes('need') || lower.includes('access')
+        ? 'Request'
+        : lower.includes('inquiry') || lower.includes('question')
+        ? 'Inquiry'
+        : 'Incident',
     rootCauseAnalysis:
       'Network routing latency, workstation authentication credential desync, or local peripheral driver fault.',
     recommendedSteps: [
@@ -126,44 +71,27 @@ Respond strictly with a JSON object in this exact schema:
 }
 
 /**
- * Conversational IT Companion answering employee queries.
+ * Conversational IT Companion answering employee queries via server-side Gemini API (gemini-3.8-flash).
  */
 export async function chatWithItCompanion(
   message: string,
   history: any[] = []
 ): Promise<string> {
-  const client = getAIClient();
+  try {
+    const res = await fetch('/api/gemini/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history })
+    });
 
-  if (client) {
-    try {
-      const systemInstruction = `You are "Cooly", the AI IT Support Companion for Coolaire Consolidated Inc. (CCI).
-You assist employees with IT HelpDesk issues, VPN setup, SAP ERP login failures, printer jams, Outlook configuration, and filing IER (Inspection & Evaluation Report) Form A and Form B.
-Be courteous, professional, concise, and structured with step-by-step bullet points.
-Coolaire internal facts:
-- Gateway Portal PIN is 7799.
-- FortiClient VPN gateway: vpn.coolaireconsolidated.com:10443.
-- IT Department is headed by Jarick Montojo and Juan Dela Cruz.
-- IER Form A is for damaged/malfunctioning equipment requiring inspection.
-- IER Form B is for technical maintenance and parts replacement.`;
-
-      const chat = client.chats.create({
-        model: 'gemini-3.8-flash',
-        config: {
-          systemInstruction
-        },
-        history
-      });
-
-      const response = await chat.sendMessage({
-        message
-      });
-
-      if (response.text) {
-        return response.text;
+    if (res.ok) {
+      const data = await res.json();
+      if (data.reply) {
+        return data.reply;
       }
-    } catch (err: any) {
-      console.warn('Gemini chat error, fallback to expert knowledge rules:', err);
     }
+  } catch (err) {
+    console.warn('Network call to /api/gemini/chat failed, using client fallback:', err);
   }
 
   // Heuristic IT expert fallback responder
@@ -204,42 +132,35 @@ You can submit both from the left navigation bar under HelpDesk Forms.`;
   }
 
   if (query.includes('pin') || query.includes('gateway')) {
-    return `The default company security gateway PIN for Coolaire Consolidated Inc. is **7799**. Administrators can adjust this under Admin Tools > System Settings.`;
+    return `The default company security gateway PIN for Coolaire Consolidated Inc. is **7799**. You can also enable "Remember PIN on this workstation" to stay logged in across browser sessions.`;
   }
 
   return `Hello! I am your Coolaire IT Companion. I can assist you with FortiClient VPN setups, IER Form A/B submissions, printer and network diagnostics, and ticketing assistance. What specific IT topic or workstation issue can I help troubleshoot?`;
 }
 
 /**
- * Drafts resolution notes for closing tickets.
+ * Drafts resolution notes for closing tickets via server-side Gemini API.
  */
 export async function draftResolutionNotes(
   subject: string,
   description: string,
   actionsTaken: string
 ): Promise<string> {
-  const client = getAIClient();
+  try {
+    const res = await fetch('/api/gemini/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject, description, actionsTaken })
+    });
 
-  if (client) {
-    try {
-      const prompt = `As a senior IT Desktop Support Engineer for Coolaire Consolidated Inc., write a concise, professional 2-3 sentence ITIL Ticket Resolution Summary.
-Ticket Subject: "${subject}"
-Issue: "${description}"
-Actions Taken by Tech: "${actionsTaken}"
-
-Return only the resolution text suitable for the permanent audit trail.`;
-
-      const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt
-      });
-
-      if (response.text) {
-        return response.text.trim();
+    if (res.ok) {
+      const data = await res.json();
+      if (data.resolutionNotes) {
+        return data.resolutionNotes;
       }
-    } catch (err) {
-      console.warn('Gemini draft resolution note fallback:', err);
     }
+  } catch (err) {
+    console.warn('Network call to /api/gemini/resolve failed:', err);
   }
 
   return `Resolved issue with ${subject}. ${actionsTaken ? actionsTaken + '.' : 'Completed diagnostics.'} Verified operational restoration and normal system functionality with the user.`;

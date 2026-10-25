@@ -32,6 +32,15 @@ import {
   initialAuditLogs
 } from '../data/mockData';
 import { googleSignIn, googleLogout } from '../services/googleAuth';
+import {
+  syncTicketToRemote,
+  syncAssetToRemote,
+  syncIerAToRemote,
+  syncIerBToRemote,
+  syncProjectToRemote,
+  fetchRemoteTickets,
+  getSupabaseClient
+} from '../services/supabase';
 
 export type AppView = 
   | 'dashboard'
@@ -67,10 +76,10 @@ interface AppContextType {
   currentUser: User | null;
   isGatewayPassed: boolean;
   authToken: string | null;
-  login: (username: string, password?: string) => boolean;
-  loginWithGoogle: () => Promise<boolean>;
+  login: (username: string, password?: string, rememberMe?: boolean) => boolean;
+  loginWithGoogle: (rememberMe?: boolean) => Promise<boolean>;
   logout: () => void;
-  verifyGatewayPin: (pin: string) => boolean;
+  verifyGatewayPin: (pin: string, rememberDevice?: boolean) => boolean;
   switchUserRole: (role: UserRole) => void;
   updateCurrentUserProfile: (profile: Partial<User>) => void;
 
@@ -177,29 +186,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Gateway and Session state
+  // Gateway and Session state with Remember Me persistence
   const [isGatewayPassed, setIsGatewayPassed] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem('cci_gateway_passed') === 'true';
+      const isRemembered = localStorage.getItem('cci_gateway_remembered') === 'true' || localStorage.getItem('cci_remember_me') === 'true';
+      const sessionPassed = sessionStorage.getItem('cci_gateway_passed') === 'true';
+      return isRemembered || sessionPassed;
     } catch {
       return false;
     }
   });
   const [authToken, setAuthToken] = useState<string | null>(() => {
     try {
-      return sessionStorage.getItem('cci_auth_token');
+      return localStorage.getItem('cci_remember_token') || sessionStorage.getItem('cci_auth_token') || null;
     } catch {
       return null;
     }
   });
 
-  // Current User: default to logged-in admin if token exists, or auto-login admin
+  // Current User: check Remember Me first
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const isRemembered = localStorage.getItem('cci_remember_me') === 'true';
     const saved = safeStorageParse<User | null>('cci_current_user', null);
     if (saved && saved.username) {
       return saved;
     }
-    // Auto-login Default Administrator for instant preview convenience
+    // Auto-login Default Administrator for convenience if not remembered
     return initialUsers[0] || null;
   });
 
@@ -296,6 +308,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleDarkMode = () => setDarkMode((prev) => !prev);
 
+  // Auto-pull live records from Supabase if connected
+  useEffect(() => {
+    let isMounted = true;
+    const loadSupabaseData = async () => {
+      try {
+        const client = getSupabaseClient();
+        if (client) {
+          const remoteTickets = await fetchRemoteTickets();
+          if (isMounted && remoteTickets && remoteTickets.length > 0) {
+            setTickets(remoteTickets);
+          }
+        }
+      } catch (err) {
+        console.warn('Initial Supabase check:', err);
+      }
+    };
+    loadSupabaseData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Persistence helpers
   useEffect(() => {
     localStorage.setItem('cci_tickets', JSON.stringify(tickets));
@@ -348,8 +382,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs((prev) => [entry, ...prev]);
   };
 
-  // Gateway check
-  const verifyGatewayPin = (pin: string): boolean => {
+  // Gateway check with optional workstation persistence
+  const verifyGatewayPin = (pin: string, rememberDevice: boolean = true): boolean => {
     const validPin = (systemSettings?.company_pin || initialSystemSettings.company_pin || '7799').trim();
     if (pin.trim() === validPin) {
       const token = 'auth_' + Math.random().toString(36).substring(2);
@@ -357,6 +391,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuthToken(token);
       sessionStorage.setItem('cci_gateway_passed', 'true');
       sessionStorage.setItem('cci_auth_token', token);
+      if (rememberDevice) {
+        localStorage.setItem('cci_gateway_remembered', 'true');
+        localStorage.setItem('cci_remember_token', token);
+      }
       addToast('PIN Verified. Welcome to CCI Workspace.', 'success');
       return true;
     }
@@ -364,8 +402,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   };
 
-  // Login handler
-  const login = (username: string, password?: string): boolean => {
+  // Login handler with Remember Me
+  const login = (username: string, password?: string, rememberMe: boolean = true): boolean => {
     const cleanUsername = username.toLowerCase().trim();
 
     // Default admin shortcut
@@ -374,6 +412,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(adminUser);
       localStorage.setItem('cci_current_user', JSON.stringify(adminUser));
       setIsGatewayPassed(true);
+      if (rememberMe) {
+        localStorage.setItem('cci_remember_me', 'true');
+        localStorage.setItem('cci_gateway_remembered', 'true');
+      } else {
+        localStorage.removeItem('cci_remember_me');
+        sessionStorage.setItem('cci_session_active', 'true');
+      }
       logAudit('LOGIN_SUCCESS_ADMIN', 'User', adminUser.user_id, 'Administrative Login');
       addToast(`Welcome back, ${adminUser.full_name}!`, 'success');
       return true;
@@ -384,6 +429,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(found);
       localStorage.setItem('cci_current_user', JSON.stringify(found));
       setIsGatewayPassed(true);
+      if (rememberMe) {
+        localStorage.setItem('cci_remember_me', 'true');
+        localStorage.setItem('cci_gateway_remembered', 'true');
+      } else {
+        localStorage.removeItem('cci_remember_me');
+        sessionStorage.setItem('cci_session_active', 'true');
+      }
       logAudit('LOGIN_SUCCESS', 'User', found.user_id, `Logged in as ${found.role}`);
       addToast(`Welcome, ${found.full_name}!`, 'success');
       return true;
@@ -393,8 +445,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   };
 
-  // Google Workspace Sign-In handler
-  const loginWithGoogle = async (): Promise<boolean> => {
+  // Google Workspace Sign-In handler with Remember Me
+  const loginWithGoogle = async (rememberMe: boolean = true): Promise<boolean> => {
     try {
       const res = await googleSignIn();
       if (!res) return false;
@@ -437,8 +489,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(userRecord);
       localStorage.setItem('cci_current_user', JSON.stringify(userRecord));
       setIsGatewayPassed(true);
-      // In-memory token management
-      setAuthToken('gauth_' + accessToken.substring(0, 16));
+      const token = 'gauth_' + accessToken.substring(0, 16);
+      setAuthToken(token);
+
+      if (rememberMe) {
+        localStorage.setItem('cci_remember_me', 'true');
+        localStorage.setItem('cci_gateway_remembered', 'true');
+        localStorage.setItem('cci_remember_token', token);
+      } else {
+        localStorage.removeItem('cci_remember_me');
+        sessionStorage.setItem('cci_session_active', 'true');
+      }
+
       logAudit('GOOGLE_WORKSPACE_LOGIN', 'User', userRecord.user_id, `Workspace Login: ${email}`);
       addToast(`Signed in as ${userRecord.full_name} (${email})`, 'success');
       return true;
@@ -458,8 +520,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsGatewayPassed(false);
     setAuthToken(null);
     localStorage.removeItem('cci_current_user');
+    localStorage.removeItem('cci_remember_me');
+    localStorage.removeItem('cci_gateway_remembered');
+    localStorage.removeItem('cci_remember_token');
     sessionStorage.removeItem('cci_gateway_passed');
     sessionStorage.removeItem('cci_auth_token');
+    sessionStorage.removeItem('cci_session_active');
     addToast('Logged out successfully.', 'info');
   };
 
@@ -516,14 +582,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTickets((prev) => [newTicket, ...prev]);
+    syncTicketToRemote(newTicket).catch(() => {});
     logAudit('CREATE_TICKET', 'Ticket', id, `Created ${ticketNumber}: ${data.subject}`);
     addToast(`Ticket ${ticketNumber} created successfully!`, 'success');
     return newTicket;
   };
 
   const updateTicketStatus = (ticketId: number, status: Ticket['status'], resolutionNotes?: string) => {
-    setTickets((prev) =>
-      prev.map((t) => {
+    setTickets((prev) => {
+      const next = prev.map((t) => {
         if (t.id === ticketId) {
           const resolvedAt = status === 'Resolved' || status === 'Closed'
             ? new Date().toISOString().replace('T', ' ').substring(0, 19)
@@ -536,8 +603,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
         return t;
-      })
-    );
+      });
+      const updated = next.find((t) => t.id === ticketId);
+      if (updated) syncTicketToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('UPDATE_TICKET_STATUS', 'Ticket', ticketId, `Changed status to ${status}`);
     addToast(`Ticket #${ticketId} status updated to ${status}.`, 'info');
   };
@@ -614,29 +684,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
     };
     setIerFormsA((prev) => [newForm, ...prev]);
+    syncIerAToRemote(newForm).catch(() => {});
     logAudit('CREATE_IER_A', 'FormA', id, `Filed ${ierNo} for ${data.asset_code}`);
     addToast(`IER Form A (${ierNo}) submitted successfully!`, 'success');
   };
 
   const updateIerFormA = (id: number, data: Partial<IerFormA>) => {
-    setIerFormsA((prev) => prev.map((f) => (f.id === id ? { ...f, ...data } : f)));
+    setIerFormsA((prev) => {
+      const next = prev.map((f) => (f.id === id ? { ...f, ...data } : f));
+      const updated = next.find((f) => f.id === id);
+      if (updated) syncIerAToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('UPDATE_IER_A', 'FormA', id, 'Updated Form A details');
     addToast('Form A updated.', 'info');
   };
 
   const approveIerA = (id: number, roleStep: 'manager' | 'it') => {
-    setIerFormsA((prev) =>
-      prev.map((f) => {
+    setIerFormsA((prev: IerFormA[]) => {
+      const next: IerFormA[] = prev.map((f): IerFormA => {
         if (f.id === id) {
           if (roleStep === 'manager') {
-            return { ...f, dept_head_status: 'Approved', workflow_status: 'Under Review' };
+            return { ...f, dept_head_status: 'Approved' as const, workflow_status: 'Under Review' as const };
           } else if (roleStep === 'it') {
-            return { ...f, it_status: 'Approved', workflow_status: 'Completed' };
+            return { ...f, it_status: 'Approved' as const, workflow_status: 'Completed' as const };
           }
         }
         return f;
-      })
-    );
+      });
+      const updated = next.find((f) => f.id === id);
+      if (updated) syncIerAToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit(`SIGN_IER_A_${roleStep.toUpperCase()}`, 'FormA', id, `Recorded ${roleStep} approval signature`);
     addToast(`Form A ${roleStep === 'manager' ? 'Manager signature' : 'IT verification'} approved!`, 'success');
   };
@@ -649,34 +728,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id,
       ier_no: ierNo,
-      manager_approval: 'Pending',
-      management_approval: 'Pending',
+      manager_approval: 'Pending' as const,
+      management_approval: 'Pending' as const,
       created_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
     };
     setIerFormsB((prev) => [newForm, ...prev]);
+    syncIerBToRemote(newForm).catch(() => {});
     logAudit('CREATE_IER_B', 'FormB', id, `Filed ${ierNo}`);
     addToast(`IER Form B (${ierNo}) submitted successfully!`, 'success');
   };
 
   const updateIerFormB = (id: number, data: Partial<IerFormB>) => {
-    setIerFormsB((prev) => prev.map((f) => (f.id === id ? { ...f, ...data } : f)));
+    setIerFormsB((prev) => {
+      const next = prev.map((f) => (f.id === id ? { ...f, ...data } : f));
+      const updated = next.find((f) => f.id === id);
+      if (updated) syncIerBToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('UPDATE_IER_B', 'FormB', id, 'Updated Form B details');
     addToast('Form B updated.', 'info');
   };
 
   const approveIerB = (id: number, roleStep: 'manager' | 'management') => {
-    setIerFormsB((prev) =>
-      prev.map((f) => {
+    setIerFormsB((prev: IerFormB[]) => {
+      const next: IerFormB[] = prev.map((f): IerFormB => {
         if (f.id === id) {
           if (roleStep === 'manager') {
-            return { ...f, manager_approval: 'Approved' };
+            return { ...f, manager_approval: 'Approved' as const };
           } else {
-            return { ...f, management_approval: 'Approved', status: 'In Progress' };
+            return { ...f, management_approval: 'Approved' as const, status: 'In Progress' as const };
           }
         }
         return f;
-      })
-    );
+      });
+      const updated = next.find((f) => f.id === id);
+      if (updated) syncIerBToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit(`SIGN_IER_B_${roleStep.toUpperCase()}`, 'FormB', id, `Approved by ${roleStep}`);
     addToast(`Form B ${roleStep} approval logged.`, 'success');
   };
@@ -691,12 +779,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       progress_percent: data.progress_percent ?? 0
     };
     setProjects((prev) => [newProj, ...prev]);
+    syncProjectToRemote(newProj).catch(() => {});
     logAudit('CREATE_PROJECT', 'Project', id, `Launched project: ${data.title}`);
     addToast(`Project "${data.title}" launched!`, 'success');
   };
 
   const updateProject = (id: number, data: Partial<ITProject>) => {
-    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+    setProjects((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, ...data } : p));
+      const updated = next.find((p) => p.id === id);
+      if (updated) syncProjectToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('EDIT_PROJECT', 'Project', id, 'Updated project specifications');
     addToast('Project updated.', 'info');
   };
@@ -726,12 +820,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const id = Date.now();
     const newAsset: Asset = { ...data, id };
     setAssets((prev) => [newAsset, ...prev]);
+    syncAssetToRemote(newAsset).catch(() => {});
     logAudit('CREATE_ASSET', 'Asset', id, `Registered asset: ${data.asset_tag}`);
     addToast(`Asset ${data.asset_tag} registered.`, 'success');
   };
 
   const updateAsset = (id: number, data: Partial<Asset>) => {
-    setAssets((prev) => prev.map((a) => (a.id === id ? { ...a, ...data } : a)));
+    setAssets((prev) => {
+      const next = prev.map((a) => (a.id === id ? { ...a, ...data } : a));
+      const updated = next.find((a) => a.id === id);
+      if (updated) syncAssetToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('UPDATE_ASSET', 'Asset', id, 'Updated asset record');
     addToast('Asset details updated.', 'info');
   };

@@ -8,24 +8,29 @@ import {
   Shield,
   Layers,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Sun,
+  Moon,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
-  const { login, loginWithGoogle } = useApp();
+  const { login, loginWithGoogle, darkMode, toggleDarkMode } = useApp();
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('admin123');
+  const [rememberMe, setRememberMe] = useState(true);
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    login(username, password);
+    login(username, password, rememberMe);
   };
 
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleSigningIn(true);
-      await loginWithGoogle();
+      await loginWithGoogle(rememberMe);
     } finally {
       setIsGoogleSigningIn(false);
     }
@@ -34,7 +39,7 @@ export const LoginScreen: React.FC = () => {
   const handleQuickLogin = (u: string, p: string = 'password') => {
     setUsername(u);
     setPassword(p);
-    login(u, p);
+    login(u, p, rememberMe);
   };
 
   return (
@@ -99,7 +104,19 @@ export const LoginScreen: React.FC = () => {
         </div>
 
         {/* Form Side */}
-        <div className="md:w-7/12 p-8 md:p-12 flex flex-col justify-center bg-white dark:bg-slate-800">
+        <div className="md:w-7/12 p-8 md:p-12 flex flex-col justify-center bg-white dark:bg-slate-800 relative">
+          <div className="absolute top-6 right-6">
+            <button
+              type="button"
+              onClick={toggleDarkMode}
+              className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-700/80 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1.5 text-xs font-bold"
+              title={darkMode ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+              <span className="text-[11px]">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          </div>
+
           <div className="mb-6">
             <div className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center">
               CCI<span className="text-[#d71921]">.</span>
@@ -186,6 +203,25 @@ export const LoginScreen: React.FC = () => {
                   className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-semibold text-xs focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 transition-all"
                 />
               </div>
+            </div>
+
+            {/* Remember Me Option */}
+            <div className="flex items-center justify-between py-1">
+              <label
+                onClick={() => setRememberMe(!rememberMe)}
+                className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-700 dark:text-slate-300"
+              >
+                <div
+                  className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                    rememberMe
+                      ? 'bg-[#002e5d] border-[#002e5d] text-white dark:bg-blue-600 dark:border-blue-600'
+                      : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'
+                  }`}
+                >
+                  {rememberMe && <CheckSquare className="w-3.5 h-3.5" />}
+                </div>
+                <span>Remember me on this device (Persistent SSO & Session)</span>
+              </label>
             </div>
 
             <button
