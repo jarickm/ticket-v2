@@ -1,0 +1,9 @@
+{
+  "name": "CCI HelpDesk Workspace",
+  "description": "The official helpdesk, ticketing, IER inspection forms, asset tracking, IT project board, and workspace management platform for Coolaire Consolidated Inc.",
+  "prompt": "Rewrite Flask-Ticket into a full-featured React application preserving all features, workflows, and design tokens.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
