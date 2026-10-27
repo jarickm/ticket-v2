@@ -9,8 +9,8 @@ export interface SupabaseConfig {
   error?: string;
 }
 
-const STORAGE_KEY_URL = 'cci_supabase_url';
-const STORAGE_KEY_KEY = 'cci_supabase_anon_key';
+const STORAGE_KEY_URL = 'postgresql+psycopg2://postgres.[ref]:[password]@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres';
+const STORAGE_KEY_KEY = 'postgresql+psycopg2://postgres:postgres@192.168.3.6:5432/local_ticket';
 
 export function getSavedSupabaseConfig(): { url: string; anonKey: string } {
   const env = (typeof import.meta !== 'undefined' ? (import.meta as any).env : {}) || {};
