@@ -25,7 +25,6 @@ import {
   pushAllDataToSupabase,
   getSupabaseSchemaSql
 } from '../../services/supabase';
-import { transferAllDataToFirestore } from '../../services/firestoreSync';
 
 export const SystemSettingsView: React.FC = () => {
   const {
@@ -37,7 +36,9 @@ export const SystemSettingsView: React.FC = () => {
     assets,
     ierFormsA,
     ierFormsB,
-    projects
+    projects,
+    pullFromSupabase,
+    isSupabaseSyncing
   } = useApp();
 
   const [companyPin, setCompanyPin] = useState(systemSettings.company_pin);
@@ -52,7 +53,6 @@ export const SystemSettingsView: React.FC = () => {
   const [supabaseKey, setSupabaseKey] = useState('');
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [isPushingSupabase, setIsPushingSupabase] = useState(false);
-  const [isTransferringFirestore, setIsTransferringFirestore] = useState(false);
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
@@ -65,8 +65,6 @@ export const SystemSettingsView: React.FC = () => {
     success: false,
     message: ''
   });
-
-  const [firestoreStatus, setFirestoreStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const creds = getSavedSupabaseConfig();
@@ -105,12 +103,7 @@ export const SystemSettingsView: React.FC = () => {
     setIsTestingDb(true);
     try {
       saveSupabaseCredentials(supabaseUrl, supabaseKey);
-      const remoteTickets = await fetchRemoteTickets();
-      if (remoteTickets && remoteTickets.length > 0) {
-        addToast(`Retrieved ${remoteTickets.length} existing tickets from Supabase!`, 'success');
-      } else {
-        addToast('Connected to Supabase. Table verified.', 'info');
-      }
+      await pullFromSupabase(true);
     } catch (err: any) {
       addToast(`Sync error: ${err.message}`, 'danger');
     } finally {
@@ -137,33 +130,6 @@ export const SystemSettingsView: React.FC = () => {
       }
     } finally {
       setIsPushingSupabase(false);
-    }
-  };
-
-  const handleTransferToFirestore = async () => {
-    setIsTransferringFirestore(true);
-    setFirestoreStatus('Transferring all tickets, users, assets, and IER forms to Firebase Firestore...');
-    try {
-      const res = await transferAllDataToFirestore({
-        tickets,
-        users,
-        assets,
-        ierFormsA,
-        ierFormsB,
-        projects
-      });
-      setFirestoreStatus(res.message);
-      if (res.success) {
-        addToast(res.message, 'success');
-      } else {
-        addToast(res.message, 'danger');
-      }
-    } catch (err: any) {
-      const msg = err.message || 'Firestore transfer failed';
-      setFirestoreStatus(msg);
-      addToast(msg, 'danger');
-    } finally {
-      setIsTransferringFirestore(false);
     }
   };
 
@@ -195,7 +161,7 @@ export const SystemSettingsView: React.FC = () => {
           System & Database Configuration
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-          Supabase PostgreSQL main database, Firebase Firestore replication, company security PIN, and SMTP mail relay.
+          Supabase PostgreSQL main database, company security PIN, and SMTP mail relay.
         </p>
       </div>
 
@@ -317,62 +283,7 @@ export const SystemSettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* 2. Firebase Firestore Data Transfer Card */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700/60">
-            <div className="flex items-center gap-2">
-              <Flame className="w-5 h-5 text-amber-500" />
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                  Firebase Firestore Cloud Replication & Mirror
-                </h3>
-                <span className="text-[10px] text-slate-400 font-semibold">
-                  Google Cloud Project: <span className="font-mono text-slate-600 dark:text-slate-300">gen-lang-client-0709840443</span>
-                </span>
-              </div>
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-              Firestore Ready
-            </span>
-          </div>
-
-          <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-            Want to copy or transfer all data to Firebase Firestore as requested? You can mirror all tickets, users, assets, IER reports, and project roadmaps directly into your provisioned Firestore database with one click.
-          </p>
-
-          <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <div className="font-extrabold text-xs text-amber-950 dark:text-amber-200 flex items-center gap-1.5">
-                <span>Total Live Records:</span>
-                <span className="bg-amber-200/60 dark:bg-amber-900/60 px-2 py-0.5 rounded text-[10px] font-mono">
-                  {tickets.length} Tickets • {users.length} Users • {assets.length} Assets • {ierFormsA.length + ierFormsB.length} IERs
-                </span>
-              </div>
-              <div className="text-[11px] text-amber-800 dark:text-amber-300 mt-1">
-                Transfers documents to collections: <span className="font-mono">tickets</span>, <span className="font-mono">users</span>, <span className="font-mono">assets</span>, <span className="font-mono">ier_forms_a</span>, <span className="font-mono">ier_forms_b</span>, <span className="font-mono">it_projects</span>.
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={isTransferringFirestore}
-              onClick={handleTransferToFirestore}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-extrabold text-xs shadow-md shadow-amber-900/10 flex items-center gap-2 shrink-0 disabled:opacity-50 cursor-pointer"
-            >
-              <Flame className={`w-4 h-4 ${isTransferringFirestore ? 'animate-bounce' : ''}`} />
-              <span>{isTransferringFirestore ? 'Transferring...' : 'Transfer All Data to Firebase Firestore'}</span>
-            </button>
-          </div>
-
-          {firestoreStatus && (
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>{firestoreStatus}</span>
-            </div>
-          )}
-        </div>
-
-        {/* 3. Gateway PIN Security */}
+        {/* 2. Gateway PIN Security */}
         <div className="p-6 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 shadow-xs space-y-4">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-700/60">
             <KeyRound className="w-4 h-4 text-amber-500" />

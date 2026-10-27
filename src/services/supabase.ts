@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Ticket, User, IerFormA, IerFormB, ITProject, Asset } from '../types';
+import { Ticket, User, IerFormA, IerFormB, ITProject, Asset, Department, SlaPolicy } from '../types';
 
 export interface SupabaseConfig {
   url: string;
@@ -113,6 +113,18 @@ export async function fetchRemoteTickets(): Promise<Ticket[] | null> {
 }
 
 export async function syncTicketToRemote(ticket: Ticket): Promise<boolean> {
+  // First attempt live PostgreSQL database API
+  try {
+    const res = await fetch('/api/db/ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ticket)
+    });
+    if (res.ok) return true;
+  } catch (e) {
+    console.warn('Backend ticket sync note:', e);
+  }
+
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -150,6 +162,48 @@ export async function syncTicketToRemote(ticket: Ticket): Promise<boolean> {
   }
 }
 
+export async function syncTicketCommentToRemote(ticketId: number, sender: string, message: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/db/ticket/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId, sender, message })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Backend ticket comment sync note:', e);
+    return false;
+  }
+}
+
+export async function syncTicketStatusToRemote(ticketId: number, status: string, resolutionNotes?: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/db/ticket/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId, status, resolutionNotes })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Backend ticket status sync note:', e);
+    return false;
+  }
+}
+
+export async function syncTicketAssignToRemote(ticketId: number, assignedIt: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/db/ticket/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId, assignedIt })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('Backend ticket assign sync note:', e);
+    return false;
+  }
+}
+
 export async function syncAssetToRemote(asset: Asset): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return false;
@@ -175,6 +229,18 @@ export async function syncAssetToRemote(asset: Asset): Promise<boolean> {
 }
 
 export async function syncIerAToRemote(form: IerFormA): Promise<boolean> {
+  // First attempt live PostgreSQL database API
+  try {
+    const res = await fetch('/api/db/ier-a', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form)
+    });
+    if (res.ok) return true;
+  } catch (e) {
+    console.warn('Backend IER-A sync note:', e);
+  }
+
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -237,6 +303,18 @@ export async function syncIerBToRemote(form: IerFormB): Promise<boolean> {
 }
 
 export async function syncProjectToRemote(project: ITProject): Promise<boolean> {
+  // First attempt live PostgreSQL database API
+  try {
+    const res = await fetch('/api/db/project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project)
+    });
+    if (res.ok) return true;
+  } catch (e) {
+    console.warn('Backend Project sync note:', e);
+  }
+
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -262,6 +340,417 @@ export async function syncProjectToRemote(project: ITProject): Promise<boolean> 
   }
 }
 
+export async function fetchRemoteAssets(): Promise<Asset[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('assets')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error || !data) {
+      console.warn('Supabase assets query note:', error?.message);
+      return null;
+    }
+    return data as Asset[];
+  } catch (err) {
+    console.error('Error fetching Supabase assets:', err);
+    return null;
+  }
+}
+
+export async function fetchRemoteIerFormsA(): Promise<IerFormA[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('ier_forms_a')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error || !data) {
+      console.warn('Supabase ier_forms_a query note:', error?.message);
+      return null;
+    }
+    return data as IerFormA[];
+  } catch (err) {
+    console.error('Error fetching Supabase ier_forms_a:', err);
+    return null;
+  }
+}
+
+export async function fetchRemoteIerFormsB(): Promise<IerFormB[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('ier_forms_b')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error || !data) {
+      console.warn('Supabase ier_forms_b query note:', error?.message);
+      return null;
+    }
+    return data as IerFormB[];
+  } catch (err) {
+    console.error('Error fetching Supabase ier_forms_b:', err);
+    return null;
+  }
+}
+
+export async function fetchRemoteProjects(): Promise<ITProject[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('it_projects')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error || !data) {
+      console.warn('Supabase it_projects query note:', error?.message);
+      return null;
+    }
+    return data as ITProject[];
+  } catch (err) {
+    console.error('Error fetching Supabase it_projects:', err);
+    return null;
+  }
+}
+
+export async function fetchRemoteUsers(): Promise<User[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('users')
+      .select('*')
+      .order('user_id', { ascending: false });
+
+    if (error || !data) {
+      console.warn('Supabase users query note:', error?.message);
+      return null;
+    }
+    return data as User[];
+  } catch (err) {
+    console.error('Error fetching Supabase users:', err);
+    return null;
+  }
+}
+
+export async function syncUserToRemote(user: User): Promise<boolean> {
+  // First attempt live PostgreSQL database API
+  try {
+    const res = await fetch('/api/db/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
+    });
+    if (res.ok) return true;
+  } catch (e) {
+    console.warn('Backend user sync note:', e);
+  }
+
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('users').upsert({
+      user_id: user.user_id,
+      username: user.username,
+      full_name: user.full_name,
+      email: user.email,
+      department: user.department,
+      role: user.role,
+      phone: user.phone || '',
+      position: user.position || '',
+      status: user.status || 'active',
+      avatar: user.avatar || ''
+    });
+    return !error;
+  } catch (err) {
+    console.error('Error syncing user to Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteTicketFromRemote(id: number): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('tickets').delete().eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteAssetFromRemote(id: number): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('assets').delete().eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteProjectFromRemote(id: number): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('it_projects').delete().eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchRemoteDepartments(): Promise<Department[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('departments')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error || !data) {
+      return null;
+    }
+    return data as Department[];
+  } catch (err) {
+    console.error('Error fetching Supabase departments:', err);
+    return null;
+  }
+}
+
+export async function syncDepartmentToRemote(dept: Department): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('departments').upsert({
+      id: dept.id,
+      name: dept.name,
+      code: dept.code,
+      manager_name: dept.manager_name || '',
+      head_count: dept.head_count || 1
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchRemoteSlaPolicies(): Promise<SlaPolicy[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('sla_policies')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error || !data) {
+      return null;
+    }
+    return data as SlaPolicy[];
+  } catch (err) {
+    console.error('Error fetching Supabase SLA policies:', err);
+    return null;
+  }
+}
+
+export async function syncSlaPolicyToRemote(policy: SlaPolicy): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('sla_policies').upsert({
+      id: policy.id,
+      ticket_type: policy.ticket_type,
+      priority: policy.priority,
+      response_in_hours: policy.response_in_hours,
+      resolve_in_hours: policy.resolve_in_hours,
+      escalation_level: policy.escalation_level || 'Tier 1'
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Subscribes to real-time postgres changes across Supabase tables.
+ */
+export function subscribeToSupabaseChanges(onChange: (table: string) => void): () => void {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+
+  try {
+    const channel = client
+      .channel('public_cloud_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' },
+        (payload) => {
+          if (payload && payload.table) {
+            onChange(payload.table);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  } catch (e) {
+    console.warn('Realtime subscription error:', e);
+    return () => {};
+  }
+}
+
+/**
+ * Pulls all records from Supabase tables to ensure existing data is loaded.
+ */
+export async function pullAllDataFromSupabase(): Promise<{
+  success: boolean;
+  message: string;
+  data: {
+    tickets?: Ticket[];
+    assets?: Asset[];
+    ierFormsA?: IerFormA[];
+    ierFormsB?: IerFormB[];
+    projects?: ITProject[];
+    projectUpdates?: any[];
+    users?: User[];
+    departments?: Department[];
+    slaPolicies?: SlaPolicy[];
+    knowledgeArticles?: any[];
+    systemSettings?: any;
+    auditLogs?: any[];
+  };
+}> {
+  // 1. Primary: Direct live PostgreSQL connection to Supabase cloud database
+  try {
+    const res = await fetch('/api/db/pull-all');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        const ticketCount = json.counts?.tickets ?? json.data.tickets?.length ?? 0;
+        const userCount = json.counts?.users ?? json.data.users?.length ?? 0;
+        return {
+          success: true,
+          message: `Connected to Supabase! Loaded ${ticketCount} live tickets, ${userCount} corporate users, and enterprise tables.`,
+          data: json.data
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Supabase Live API Pull Note]:', err?.message || err);
+  }
+
+  // 2. Secondary fallback: direct Supabase JS SDK client
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      message: 'Supabase is not connected. Enter Project URL and Anon API Key.',
+      data: {}
+    };
+  }
+
+  try {
+    const [
+      remoteTickets,
+      remoteAssets,
+      remoteIerA,
+      remoteIerB,
+      remoteProjects,
+      remoteUsers,
+      remoteDepts,
+      remoteSlas
+    ] = await Promise.all([
+      fetchRemoteTickets(),
+      fetchRemoteAssets(),
+      fetchRemoteIerFormsA(),
+      fetchRemoteIerFormsB(),
+      fetchRemoteProjects(),
+      fetchRemoteUsers(),
+      fetchRemoteDepartments(),
+      fetchRemoteSlaPolicies()
+    ]);
+
+    const resultData: {
+      tickets?: Ticket[];
+      assets?: Asset[];
+      ierFormsA?: IerFormA[];
+      ierFormsB?: IerFormB[];
+      projects?: ITProject[];
+      users?: User[];
+      departments?: Department[];
+      slaPolicies?: SlaPolicy[];
+    } = {};
+
+    let totalFetched = 0;
+    if (remoteTickets && remoteTickets.length > 0) {
+      resultData.tickets = remoteTickets;
+      totalFetched += remoteTickets.length;
+    }
+    if (remoteAssets && remoteAssets.length > 0) {
+      resultData.assets = remoteAssets;
+      totalFetched += remoteAssets.length;
+    }
+    if (remoteIerA && remoteIerA.length > 0) {
+      resultData.ierFormsA = remoteIerA;
+      totalFetched += remoteIerA.length;
+    }
+    if (remoteIerB && remoteIerB.length > 0) {
+      resultData.ierFormsB = remoteIerB;
+      totalFetched += remoteIerB.length;
+    }
+    if (remoteProjects && remoteProjects.length > 0) {
+      resultData.projects = remoteProjects;
+      totalFetched += remoteProjects.length;
+    }
+    if (remoteUsers && remoteUsers.length > 0) {
+      resultData.users = remoteUsers;
+      totalFetched += remoteUsers.length;
+    }
+    if (remoteDepts && remoteDepts.length > 0) {
+      resultData.departments = remoteDepts;
+      totalFetched += remoteDepts.length;
+    }
+    if (remoteSlas && remoteSlas.length > 0) {
+      resultData.slaPolicies = remoteSlas;
+      totalFetched += remoteSlas.length;
+    }
+
+    return {
+      success: true,
+      message: `Retrieved ${totalFetched} records directly from Supabase tables!`,
+      data: resultData
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || 'Error pulling data from Supabase.',
+      data: {}
+    };
+  }
+}
+
 /**
  * Pushes all workspace data to Supabase in batch.
  */
@@ -272,6 +761,8 @@ export async function pushAllDataToSupabase(data: {
   ierFormsA: IerFormA[];
   ierFormsB: IerFormB[];
   projects: ITProject[];
+  departments?: Department[];
+  slaPolicies?: SlaPolicy[];
 }): Promise<{ success: boolean; message: string; counts: Record<string, number> }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -287,7 +778,10 @@ export async function pushAllDataToSupabase(data: {
     assets: 0,
     ierFormsA: 0,
     ierFormsB: 0,
-    projects: 0
+    projects: 0,
+    users: 0,
+    departments: 0,
+    slaPolicies: 0
   };
 
   try {
@@ -306,10 +800,23 @@ export async function pushAllDataToSupabase(data: {
     for (const p of data.projects) {
       if (await syncProjectToRemote(p)) counts.projects++;
     }
+    for (const u of data.users) {
+      if (await syncUserToRemote(u)) counts.users++;
+    }
+    if (data.departments) {
+      for (const d of data.departments) {
+        if (await syncDepartmentToRemote(d)) counts.departments++;
+      }
+    }
+    if (data.slaPolicies) {
+      for (const s of data.slaPolicies) {
+        if (await syncSlaPolicyToRemote(s)) counts.slaPolicies++;
+      }
+    }
 
     return {
       success: true,
-      message: `Pushed ${counts.tickets} tickets, ${counts.assets} assets, ${counts.ierFormsA + counts.ierFormsB} IER reports, and ${counts.projects} IT projects to Supabase!`,
+      message: `Pushed ${counts.tickets} tickets, ${counts.assets} assets, ${counts.ierFormsA + counts.ierFormsB} IER reports, ${counts.projects} IT projects, and ${counts.users} users to Supabase!`,
       counts
     };
   } catch (err: any) {
@@ -430,17 +937,56 @@ CREATE TABLE IF NOT EXISTS public.it_projects (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 6. Enable Row Level Security (RLS) & Public Anon Access Policy
+-- 6. Users & Personnel Directory Table
+CREATE TABLE IF NOT EXISTS public.users (
+    user_id BIGINT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    department TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'employee',
+    phone TEXT DEFAULT '',
+    position TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    avatar TEXT DEFAULT ''
+);
+
+-- 7. Corporate Departments Table
+CREATE TABLE IF NOT EXISTS public.departments (
+    id BIGINT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    code TEXT NOT NULL,
+    manager_name TEXT DEFAULT '',
+    head_count INT DEFAULT 1
+);
+
+-- 8. SLA Policies Master Table
+CREATE TABLE IF NOT EXISTS public.sla_policies (
+    id BIGINT PRIMARY KEY,
+    ticket_type TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    response_in_hours NUMERIC NOT NULL,
+    resolve_in_hours NUMERIC NOT NULL,
+    escalation_level TEXT DEFAULT 'Tier 1'
+);
+
+-- 9. Enable Row Level Security (RLS) & Public Anon Access Policy
 ALTER TABLE public.tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ier_forms_a ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ier_forms_b ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.it_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sla_policies ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow anon read/write tickets" ON public.tickets FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon read/write assets" ON public.assets FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon read/write ier_forms_a" ON public.ier_forms_a FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon read/write ier_forms_b" ON public.ier_forms_b FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon read/write it_projects" ON public.it_projects FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon read/write users" ON public.users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon read/write departments" ON public.departments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon read/write sla_policies" ON public.sla_policies FOR ALL USING (true) WITH CHECK (true);
 `;
 }

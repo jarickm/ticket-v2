@@ -34,11 +34,22 @@ import {
 import { googleSignIn, googleLogout } from '../services/googleAuth';
 import {
   syncTicketToRemote,
+  syncTicketCommentToRemote,
+  syncTicketStatusToRemote,
+  syncTicketAssignToRemote,
   syncAssetToRemote,
   syncIerAToRemote,
   syncIerBToRemote,
   syncProjectToRemote,
+  syncUserToRemote,
+  syncDepartmentToRemote,
+  syncSlaPolicyToRemote,
+  deleteProjectFromRemote,
+  deleteAssetFromRemote,
+  deleteTicketFromRemote,
   fetchRemoteTickets,
+  pullAllDataFromSupabase,
+  subscribeToSupabaseChanges,
   getSupabaseClient
 } from '../services/supabase';
 
@@ -150,6 +161,12 @@ interface AppContextType {
   addDepartment: (dept: Omit<Department, 'id'>) => void;
   updateSlaPolicy: (id: number, updates: Partial<SlaPolicy>) => void;
 
+  // Supabase Live Sync
+  pullFromSupabase: (showToast?: boolean) => Promise<boolean>;
+  isSupabaseSyncing: boolean;
+  isSupabaseModalOpen: boolean;
+  setIsSupabaseModalOpen: (open: boolean) => void;
+
   // Toasts
   toasts: ToastMessage[];
   addToast: (message: string, type?: ToastMessage['type']) => void;
@@ -204,15 +221,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Current User: check Remember Me first
+  // Current User: NEVER auto-login. Must require user domain credentials or SSO.
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const isRemembered = localStorage.getItem('cci_remember_me') === 'true';
-    const saved = safeStorageParse<User | null>('cci_current_user', null);
-    if (saved && saved.username) {
-      return saved;
+    try {
+      const isRemembered = localStorage.getItem('cci_remember_me') === 'true';
+      if (isRemembered) {
+        const saved = safeStorageParse<User | null>('cci_current_user', null);
+        if (saved && saved.username) {
+          return saved;
+        }
+      }
+      return null; // Require login screen
+    } catch {
+      return null;
     }
-    // Auto-login Default Administrator for convenience if not remembered
-    return initialUsers[0] || null;
   });
 
   // Active view
@@ -276,7 +298,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return safeStorageParse<Asset[]>('cci_assets', initialAssets);
   });
 
-  const [knowledgeArticles] = useState<KnowledgeArticle[]>(initialKnowledgeArticles);
+  const [knowledgeArticles, setKnowledgeArticles] = useState<KnowledgeArticle[]>(() => {
+    return safeStorageParse<KnowledgeArticle[]>('cci_kb_articles', initialKnowledgeArticles);
+  });
 
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => {
     const parsed = safeStorageParse<Partial<SystemSettings>>('cci_system_settings', {});
@@ -294,6 +318,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return safeStorageParse<AuditLogEntry[]>('cci_audit_logs', initialAuditLogs);
   });
 
+  const [isSupabaseSyncing, setIsSupabaseSyncing] = useState<boolean>(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+
   // Sync dark mode class
   useEffect(() => {
     localStorage.setItem('cci_dark_mode', String(darkMode));
@@ -308,25 +335,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleDarkMode = () => setDarkMode((prev) => !prev);
 
-  // Auto-pull live records from Supabase if connected
-  useEffect(() => {
-    let isMounted = true;
-    const loadSupabaseData = async () => {
-      try {
-        const client = getSupabaseClient();
-        if (client) {
-          const remoteTickets = await fetchRemoteTickets();
-          if (isMounted && remoteTickets && remoteTickets.length > 0) {
-            setTickets(remoteTickets);
-          }
+  // Auto-pull live records from Supabase (sole cloud primary database)
+  const pullFromSupabase = async (showToast: boolean = false): Promise<boolean> => {
+    setIsSupabaseSyncing(true);
+    try {
+      const res = await pullAllDataFromSupabase();
+      if (res.success && res.data) {
+        if (res.data.tickets && res.data.tickets.length > 0) {
+          setTickets(res.data.tickets);
         }
-      } catch (err) {
-        console.warn('Initial Supabase check:', err);
+        if (res.data.assets && res.data.assets.length > 0) {
+          setAssets(res.data.assets);
+        }
+        if (res.data.ierFormsA && res.data.ierFormsA.length > 0) {
+          setIerFormsA(res.data.ierFormsA);
+        }
+        if (res.data.ierFormsB && res.data.ierFormsB.length > 0) {
+          setIerFormsB(res.data.ierFormsB);
+        }
+        if (res.data.projects && res.data.projects.length > 0) {
+          setProjects(res.data.projects);
+        }
+        if (res.data.projectUpdates && res.data.projectUpdates.length > 0) {
+          setProjectUpdates(res.data.projectUpdates);
+        }
+        if (res.data.users && res.data.users.length > 0) {
+          setUsers(res.data.users);
+        }
+        if (res.data.departments && res.data.departments.length > 0) {
+          setDepartments(res.data.departments);
+        }
+        if (res.data.slaPolicies && res.data.slaPolicies.length > 0) {
+          setSlaPolicies(res.data.slaPolicies);
+        }
+        if (res.data.knowledgeArticles && res.data.knowledgeArticles.length > 0) {
+          setKnowledgeArticles(res.data.knowledgeArticles);
+        }
+        if (res.data.auditLogs && res.data.auditLogs.length > 0) {
+          setAuditLogs(res.data.auditLogs);
+        }
+        if (showToast) {
+          addToast(res.message, 'success');
+        }
+        return true;
+      } else if (showToast) {
+        addToast(res.message, 'info');
       }
-    };
-    loadSupabaseData();
+      return false;
+    } catch (err: any) {
+      if (showToast) addToast(`Supabase pull: ${err.message}`, 'danger');
+      return false;
+    } finally {
+      setIsSupabaseSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    pullFromSupabase(false);
+
+    // Live Realtime listener for Postgres changes across Supabase
+    const unsubscribe = subscribeToSupabaseChanges((table) => {
+      console.log(`[Supabase Realtime] Table "${table}" updated on cloud. Re-pulling...`);
+      pullFromSupabase(false);
+    });
+
     return () => {
-      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -608,6 +682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (updated) syncTicketToRemote(updated).catch(() => {});
       return next;
     });
+    syncTicketStatusToRemote(ticketId, status, resolutionNotes).catch(() => {});
     logAudit('UPDATE_TICKET_STATUS', 'Ticket', ticketId, `Changed status to ${status}`);
     addToast(`Ticket #${ticketId} status updated to ${status}.`, 'info');
   };
@@ -616,6 +691,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTickets((prev) =>
       prev.map((t) => (t.id === ticketId ? { ...t, assigned_it: itStaffName, status: t.status === 'New' ? 'Assigned' : t.status } : t))
     );
+    syncTicketAssignToRemote(ticketId, itStaffName).catch(() => {});
     logAudit('ASSIGN_TICKET', 'Ticket', ticketId, `Assigned to ${itStaffName}`);
     addToast(`Ticket assigned to ${itStaffName}.`, 'success');
   };
@@ -634,6 +710,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTickets((prev) =>
       prev.map((t) => (t.id === ticketId ? { ...t, comments: [...t.comments, comment] } : t))
     );
+    syncTicketCommentToRemote(ticketId, comment.sender, comment.message).catch(() => {});
     logAudit('ADD_TICKET_COMMENT', 'Ticket', ticketId, 'Posted reply');
     addToast('Comment added.', 'info');
   };
@@ -798,6 +875,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteProject = (id: number) => {
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setProjectUpdates((prev) => prev.filter((u) => u.project_id !== id));
+    deleteProjectFromRemote(id).catch(() => {});
     logAudit('DELETE_PROJECT', 'Project', id, 'Permanently removed project');
     addToast('Project removed.', 'warning');
   };
@@ -853,25 +931,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const id = Date.now();
     const newUser: User = { ...userData, user_id: id };
     setUsers((prev) => [...prev, newUser]);
+    syncUserToRemote(newUser).catch(() => {});
     logAudit('CREATE_USER', 'User', id, `Added user ${userData.username}`);
     addToast(`User ${userData.username} created.`, 'success');
   };
 
   const updateUser = (userId: number, updates: Partial<User>) => {
-    setUsers((prev) => prev.map((u) => (u.user_id === userId ? { ...u, ...updates } : u)));
+    setUsers((prev) => {
+      const next = prev.map((u) => (u.user_id === userId ? { ...u, ...updates } : u));
+      const updated = next.find((u) => u.user_id === userId);
+      if (updated) syncUserToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('UPDATE_USER', 'User', userId, 'Modified user account');
     addToast('User updated.', 'info');
   };
 
   const addDepartment = (dept: Omit<Department, 'id'>) => {
     const id = Date.now();
-    setDepartments((prev) => [...prev, { ...dept, id }]);
+    const newDept: Department = { ...dept, id };
+    setDepartments((prev) => [...prev, newDept]);
+    syncDepartmentToRemote(newDept).catch(() => {});
     logAudit('CREATE_DEPT', 'Department', id, `Added ${dept.name}`);
     addToast(`Department ${dept.name} added.`, 'success');
   };
 
   const updateSlaPolicy = (id: number, updates: Partial<SlaPolicy>) => {
-    setSlaPolicies((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+    setSlaPolicies((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, ...updates } : p));
+      const updated = next.find((p) => p.id === id);
+      if (updated) syncSlaPolicyToRemote(updated).catch(() => {});
+      return next;
+    });
     logAudit('UPDATE_SLA', 'SlaPolicy', id, 'Adjusted SLA response and resolution hours');
     addToast('SLA policy updated.', 'info');
   };
@@ -939,6 +1030,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateUser,
         addDepartment,
         updateSlaPolicy,
+        pullFromSupabase,
+        isSupabaseSyncing,
+        isSupabaseModalOpen,
+        setIsSupabaseModalOpen,
         toasts,
         addToast,
         removeToast

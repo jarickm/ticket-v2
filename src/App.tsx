@@ -29,6 +29,7 @@ import { SubmitTicketModal } from './components/tickets/SubmitTicketModal';
 import { TicketDetailModal } from './components/tickets/TicketDetailModal';
 import { PrintIerModal } from './components/ier/PrintIerModal';
 import { AiCompanionDrawer } from './components/ai/AiCompanionDrawer';
+import { SupabaseCloudModal } from './components/common/SupabaseCloudModal';
 import { AlertCircle, CheckCircle, Info, X } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -38,7 +39,9 @@ export const App: React.FC = () => {
     currentView,
     systemSettings,
     toasts,
-    removeToast
+    removeToast,
+    isSupabaseModalOpen,
+    setIsSupabaseModalOpen
   } = useApp();
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -138,6 +141,10 @@ export const App: React.FC = () => {
       <TicketDetailModal />
       <PrintIerModal />
       <AiCompanionDrawer />
+      <SupabaseCloudModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
+      />
 
       {/* Toast Notifications */}
       <div className="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm pointer-events-none">

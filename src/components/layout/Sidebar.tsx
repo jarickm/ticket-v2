@@ -24,7 +24,8 @@ import {
   PackageCheck,
   ChevronDown,
   Sun,
-  Moon
+  Moon,
+  Database
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -41,7 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     switchUserRole,
     setIsSubmitTicketModalOpen,
     darkMode,
-    toggleDarkMode
+    toggleDarkMode,
+    setIsSupabaseModalOpen
   } = useApp();
 
   const handleNav = (view: AppView) => {
@@ -359,8 +361,36 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             )}
           </div>
 
+          {/* Supabase Cloud Connection Indicator */}
+          <div className="pt-2 mb-2 border-t border-slate-100 dark:border-slate-700/60">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSupabaseModalOpen(true);
+                if (onClose) onClose();
+              }}
+              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200/80 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200 transition-all text-xs font-bold text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <div>
+                  <div className="text-[11px] font-extrabold flex items-center gap-1.5">
+                    <span>Supabase Cloud</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  </div>
+                  <div className="text-[9px] text-emerald-700/80 dark:text-emerald-300/80 font-medium">
+                    Pull & Sync Database
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold text-emerald-600 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                Sync
+              </span>
+            </button>
+          </div>
+
           {/* Theme Toggle Footer */}
-          <div className="pt-3 mt-auto border-t border-slate-100 dark:border-slate-700/60">
+          <div className="mt-auto">
             <button
               onClick={toggleDarkMode}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 transition-colors text-xs font-bold cursor-pointer"

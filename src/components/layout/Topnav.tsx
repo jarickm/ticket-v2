@@ -10,7 +10,9 @@ import {
   PlusCircle,
   Ticket as TicketIcon,
   CheckCircle2,
-  Clock
+  Clock,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 
 interface TopnavProps {
@@ -29,7 +31,10 @@ export const Topnav: React.FC<TopnavProps> = ({ onToggleSidebar }) => {
     logout,
     setIsSubmitTicketModalOpen,
     setSelectedTicketId,
-    tickets
+    tickets,
+    pullFromSupabase,
+    isSupabaseSyncing,
+    setIsSupabaseModalOpen
   } = useApp();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -101,19 +106,33 @@ export const Topnav: React.FC<TopnavProps> = ({ onToggleSidebar }) => {
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 md:gap-3">
-        {/* Supabase Indicator */}
-        <button
-          onClick={() => setCurrentView('settings')}
-          className={`hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
-            supabaseCreds
-              ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-              : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-          }`}
-          title="Supabase Database Settings"
-        >
-          <span className={`w-2 h-2 rounded-full ${supabaseCreds ? 'bg-emerald-500 shadow-[0_0_6px_#10b981] animate-pulse' : 'bg-slate-400'}`} />
-          <span>{supabaseCreds ? 'Supabase: Active' : 'Supabase: Connect'}</span>
-        </button>
+        {/* Supabase Indicator & Quick Sync */}
+        <div className="hidden xl:flex items-center gap-1.5">
+          <button
+            onClick={() => setIsSupabaseModalOpen(true)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+              supabaseCreds
+                ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+            title="Supabase Cloud Database Settings & Live Sync"
+          >
+            <Database className="w-3 h-3 text-emerald-600" />
+            <span className={`w-2 h-2 rounded-full ${supabaseCreds ? 'bg-emerald-500 shadow-[0_0_6px_#10b981] animate-pulse' : 'bg-slate-400'}`} />
+            <span>{supabaseCreds ? 'Supabase: Cloud Live' : 'Supabase: Connect'}</span>
+          </button>
+
+          {supabaseCreds && (
+            <button
+              onClick={() => pullFromSupabase(true)}
+              disabled={isSupabaseSyncing}
+              className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-700/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              title="Pull latest live records from Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSupabaseSyncing ? 'animate-spin text-blue-600' : ''}`} />
+            </button>
+          )}
+        </div>
 
         {/* Export CSV (From original app /export_report) */}
         <button

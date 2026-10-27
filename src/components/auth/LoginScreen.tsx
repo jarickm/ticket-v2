@@ -17,9 +17,9 @@ import {
 
 export const LoginScreen: React.FC = () => {
   const { login, loginWithGoogle, darkMode, toggleDarkMode } = useApp();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
-  const [rememberMe, setRememberMe] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
